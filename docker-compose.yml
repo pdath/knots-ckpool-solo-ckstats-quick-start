@@ -1,0 +1,134 @@
+# DATA_PATH=${DATA_PATH:-./solo-mining-data}  # Base path for container data volumes
+# Linux/Mac:  export DATA_PATH=/path/to/data && docker-compose up
+# Windows PowerShell:  $env:DATA_PATH="C:\path\to\data"; docker-compose up
+# Windows Command Prompt (DOS):  set DATA_PATH=C:\path\to\data && docker-compose up
+
+services:
+  init-mainnet:
+    image: python:slim
+    container_name: init-mainnet
+    profiles: ["mainnet"]
+    volumes:
+      - ${DATA_PATH:-./solo-mining-data}/secrets:/secrets
+      - ${DATA_PATH:-./solo-mining-data}/init-mainnet/run.sh:/run.sh
+      - ${DATA_PATH:-./solo-mining-data}/ckpool-solo-mainnet/ckpool.conf:/ckpool.conf
+      - ${DATA_PATH:-./solo-mining-data}/bitcoin-knots-mainnet/bitcoin.conf:/bitcoin.conf
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - '. /run.sh 2>&1'
+  
+  bitcoin-node-mainnet:
+    image: bitcoinknots/bitcoin:29.3
+    container_name: bitcoin-knots-mainnet
+    profiles: ["mainnet"]
+    volumes:
+      # For the main database
+      - bitcoin-mainnet-data:/home/bitcoin/.bitcoin
+      # For the config file
+      - ${DATA_PATH:-./solo-mining-data}/bitcoin-knots-mainnet/bitcoin.conf:/home/bitcoin/.bitcoin/bitcoin.conf
+      # For the health check script
+      - ${DATA_PATH:-./solo-mining-data}/bitcoin-knots-mainnet/health-check.sh:/home/bitcoin/health-check.sh
+    ports:
+      - "8333:8333"   # Bitcoin P2P port
+      - "8332:8332"   # Bitcoin JSON-RPC/REST
+      - "8331:8331"   # Bitcoin ZMQ
+    restart: unless-stopped
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD-SHELL", "gosu bitcoin /home/bitcoin/health-check.sh"]
+      interval: 5m      # Check every 5 minutes
+      timeout: 30s      # Timeout for the command
+      retries: 3        # Number of retries before marking unhealthy
+      start_period: 4d # Give time for initial startup (bitcoind to launch)
+      start_interval: 1m # More frequent checks during start period
+    depends_on:
+      init-mainnet:
+        condition: service_completed_successfully
+
+  ckpool-solo-mainnet:
+    image: pdath/ckpool-solo
+    container_name: ckpool-solo-mainnet
+    profiles: ["mainnet"]
+    tmpfs:
+      - /tmp
+    volumes:
+      - ${DATA_PATH:-./solo-mining-data}/ckpool-solo-mainnet/ckpool.conf:/etc/ckpool/ckpool.conf:ro
+      - ${DATA_PATH:-./solo-mining-data}/ckpool-solo-mainnet/logs:/var/log/ckpool
+    depends_on:
+      bitcoin-node-mainnet:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3333:3333"
+    healthcheck:
+      test: ["CMD-SHELL", "(echo '{\"id\":1,\"method\":\"mining.subscribe\",\"params\":[]}'; sleep 1) | nc localhost 3333 | grep -q result"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 10m
+
+  postgresql-mainnet:
+    image: postgres:16
+    container_name: postgresql-mainnet
+    profiles: ["mainnet"]
+    environment:
+      POSTGRES_DB: ckstats-mainnet
+      POSTGRES_USER: ckstats-mainnet
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_mainnet_password
+    secrets:
+      - postgres_mainnet_password
+    volumes:
+      - postgresql-mainnet-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ckstats-mainnet", "-d", "ckstats-mainnet"]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      init-mainnet:
+        condition: service_completed_successfully
+
+  ckstats-mainnet:
+    image: pdath/ckstats
+    container_name: ckstats-mainnet
+    profiles: ["mainnet"]
+    tmpfs:
+      - /tmp
+    environment:
+      API_URL: "/var/log/ckpool"
+      DB_HOST: "postgresql-mainnet"
+      DB_USER: "ckstats-mainnet"
+      DB_PASSWORD_FILE: /run/secrets/postgres_mainnet_password
+      DB_NAME: "ckstats-mainnet"
+      DB_SSL: "false"
+    volumes:
+      - ${DATA_PATH:-./solo-mining-data}/ckpool-solo-mainnet/logs:/var/log/ckpool:ro
+    ports:
+      - "3334:3000"   # Mainnet web interface
+    secrets:
+      - postgres_mainnet_password
+    depends_on:
+      postgresql-mainnet:
+        condition: service_healthy
+      ckpool-solo-mainnet:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  bitcoin-mainnet-data:
+    name: bitcoin-mainnet-data
+  postgresql-mainnet-data:
+    name: postgresql-mainnet-data
+
+secrets:
+  postgres_mainnet_password:
+    file: ${DATA_PATH:-./solo-mining-data}/secrets/.postgres_mainnet_password   # ← gitignore this file!
+  rpc_mainnet_password:
+    file: ${DATA_PATH:-./solo-mining-data}/secrets/.rpc_mainnet_password   # ← gitignore this file!  
+  rpcauth_mainnet:
+    file: ${DATA_PATH:-./solo-mining-data}/secrets/.rpcauth_mainnet   # ← gitignore this file!
