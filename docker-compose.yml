@@ -1,7 +1,8 @@
-# DATA_PATH=${DATA_PATH:-./solo-mining-data}  # Base path for container data volumes
-# Linux/Mac:  export DATA_PATH=/path/to/data && docker-compose up
-# Windows PowerShell:  $env:DATA_PATH="C:\path\to\data"; docker-compose up
-# Windows Command Prompt (DOS):  set DATA_PATH=C:\path\to\data && docker-compose up
+# A quick start Docker Compose to spin up a Bitcoin Knots, ckpool and ckstats (web gui) for solo Bitcoin mining.
+#
+# Linux/Mac: export DATA_PATH=/path/to/data COMPOSE_PROJECT_NAME=mainnet && docker-compose --profile mainnet up -d
+# Windows PowerShell: $env:DATA_PATH="C:\path\to\data"; $env:COMPOSE_PROJECT_NAME="mainnet"; docker-compose --profile mainnet up -d
+# Windows Command Prompt (DOS): set DATA_PATH=C:\path\to\data & set COMPOSE_PROJECT_NAME=mainnet & docker-compose --profile mainnet up -d
 
 services:
   init-mainnet:

@@ -6,6 +6,7 @@ Bitcoin Knots, ckpool (solo) and ckstats (a web gui) on Windows.  This can then 
 It should run on Linux and Mac, but it was specifically created for Windows users.  If you are on Linux or Mac, create a run.sh file (chmod +x) with the contents:
 ```
 #!/usr/bin/env bash
+=======
 
 export COMPOSE_PROJECT_NAME="mainnet"
 export DATA_PATH="./solo-mining-data"
